@@ -4,7 +4,7 @@ Parameter validation and mapping utilities for OpenAI to Claude Code SDK convers
 
 import logging
 from typing import Dict, Any, List, Optional
-from src.models import ChatCompletionRequest
+from src.models import ChatCompletionRequest, normalize_effort
 from src.constants import CLAUDE_MODELS
 
 logger = logging.getLogger(__name__)
@@ -102,6 +102,7 @@ class ParameterValidator:
         - X-Claude-Max-Turns: 5
         - X-Claude-Allowed-Tools: tool1,tool2,tool3
         - X-Claude-Permission-Mode: acceptEdits
+        - X-Claude-Effort: low|medium|high|xhigh|max
         """
         claude_options = {}
 
@@ -138,6 +139,14 @@ class ParameterValidator:
                 logger.warning(
                     f"Invalid X-Claude-Max-Thinking-Tokens header: {headers['x-claude-max-thinking-tokens']}"
                 )
+
+        # Extract effort level
+        if "x-claude-effort" in headers:
+            effort = normalize_effort(headers["x-claude-effort"])
+            if effort:
+                claude_options["effort"] = effort
+            else:
+                logger.warning(f"Invalid X-Claude-Effort header: {headers['x-claude-effort']}")
 
         return claude_options
 

@@ -6,6 +6,8 @@ from typing import AsyncGenerator, Dict, Any, Optional, List
 from pathlib import Path
 import logging
 
+from src.models import normalize_effort
+
 from claude_agent_sdk import query, ClaudeAgentOptions, SdkMcpTool, create_sdk_mcp_server
 
 CLIENT_TOOL_SERVER = "client"
@@ -109,6 +111,7 @@ class ClaudeCodeCLI:
         continue_session: bool = False,
         permission_mode: Optional[str] = None,
         client_tools: Optional[List[Dict[str, Any]]] = None,
+        effort: Optional[str] = None,
     ) -> AsyncGenerator[Dict[str, Any], None]:
         """Run Claude Agent using the Python SDK and yield response chunks."""
 
@@ -131,6 +134,11 @@ class ClaudeCodeCLI:
                     setting_sources=[],
                     extra_args={"strict-mcp-config": None},
                 )
+
+                # Effort: per-request value, else server default (CLAUDE_EFFORT)
+                effort = effort or normalize_effort(os.getenv("CLAUDE_EFFORT"))
+                if effort:
+                    options.effort = effort
 
                 # Set model if specified
                 if model:

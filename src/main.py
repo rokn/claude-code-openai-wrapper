@@ -682,6 +682,7 @@ async def generate_streaming_response(
             disallowed_tools=claude_options.get("disallowed_tools"),
             permission_mode=claude_options.get("permission_mode"),
             client_tools=claude_options.get("client_tools"),
+            effort=claude_options.get("effort"),
             stream=True,
         ):
             if chunk.get("type") == "client_tool_calls":
@@ -967,6 +968,7 @@ async def chat_completions(
                 disallowed_tools=claude_options.get("disallowed_tools"),
                 permission_mode=claude_options.get("permission_mode"),
                 client_tools=claude_options.get("client_tools"),
+                effort=claude_options.get("effort"),
                 stream=False,
             ):
                 if chunk.get("type") == "client_tool_calls":

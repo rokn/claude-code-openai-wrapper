@@ -51,6 +51,23 @@ class Message(BaseModel):
         return self
 
 
+# OpenAI reasoning_effort -> Claude effort level
+OPENAI_EFFORT_MAP = {
+    "none": "low",
+    "minimal": "low",
+    "low": "low",
+    "medium": "medium",
+    "high": "high",
+    "xhigh": "xhigh",
+    "max": "max",
+}
+
+
+def normalize_effort(value: Optional[str]) -> Optional[str]:
+    """Map an OpenAI/Claude effort string to a Claude effort level, or None if invalid."""
+    return OPENAI_EFFORT_MAP.get(value.strip().lower()) if value else None
+
+
 class StreamOptions(BaseModel):
     """Options for streaming responses."""
 
@@ -91,6 +108,24 @@ class ChatCompletionRequest(BaseModel):
     tool_choice: Optional[Union[str, Dict[str, Any]]] = Field(
         default=None, description="'none' disables the supplied tools; other values are advisory"
     )
+    reasoning_effort: Optional[str] = Field(
+        default=None,
+        description="OpenAI reasoning effort (none/minimal/low/medium/high/xhigh/max); "
+        "mapped to the Claude effort level",
+    )
+
+    @field_validator("reasoning_effort")
+    @classmethod
+    def validate_reasoning_effort(cls, v):
+        if v is None:
+            return v
+        effort = normalize_effort(v)
+        if effort is None:
+            raise ValueError(
+                f"Invalid reasoning_effort '{v}'. Use one of: "
+                f"{', '.join(sorted(OPENAI_EFFORT_MAP))}"
+            )
+        return v
 
     @field_validator("n")
     @classmethod
@@ -202,6 +237,9 @@ class ChatCompletionRequest(BaseModel):
             logger.info(
                 f"Mapped max_tokens={max_token_value} to max_thinking_tokens (approximate behavior)"
             )
+
+        if self.reasoning_effort:
+            options["effort"] = normalize_effort(self.reasoning_effort)
 
         # Use user field for session identification if provided
         if self.user:
