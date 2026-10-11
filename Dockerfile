@@ -1,30 +1,41 @@
+# syntax=docker/dockerfile:1
+
+# ---- builder: resolve and install deps into an in-project venv ----
+FROM python:3.12-slim AS builder
+
+ENV POETRY_VERSION=1.8.5 \
+    POETRY_NO_INTERACTION=1 \
+    POETRY_VIRTUALENVS_IN_PROJECT=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1
+
+RUN pip install "poetry==${POETRY_VERSION}"
+
+WORKDIR /app
+COPY pyproject.toml poetry.lock ./
+RUN poetry install --only main --no-root
+
+# ---- runtime ----
 FROM python:3.12-slim
 
-# Install system deps (curl for Poetry installer)
-RUN apt-get update && apt-get install -y \
-    curl \
-    && rm -rf /var/lib/apt/lists/*
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PATH="/app/.venv/bin:${PATH}" \
+    PORT=8000
 
-# Install Poetry globally
-RUN curl -sSL https://install.python-poetry.org | python3 -
+# Claude CLI is bundled with claude-agent-sdk; no Node.js needed.
+RUN useradd --create-home --uid 1000 app
 
-# Add Poetry to PATH
-ENV PATH="/root/.local/bin:${PATH}"
-
-# Note: Claude Code CLI is bundled with claude-agent-sdk >= 0.1.8
-# No separate Node.js/npm installation required
-
-# Copy the app code
-COPY . /app
-
-# Set working directory
 WORKDIR /app
+COPY --from=builder --chown=app:app /app/.venv /app/.venv
+COPY --chown=app:app src ./src
+COPY --chown=app:app pyproject.toml README.md ./
 
-# Install Python dependencies with Poetry
-RUN poetry install --no-root
+USER app
 
-# Expose the port (default 8000)
 EXPOSE 8000
 
-# Run the app with Uvicorn (development mode with reload; switch to --no-reload for prod)
-CMD ["poetry", "run", "uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
+    CMD python -c "import os,urllib.request as u; u.urlopen(f'http://127.0.0.1:{os.environ.get(\"PORT\",\"8000\")}/health', timeout=4)" || exit 1
+
+CMD ["sh", "-c", "exec uvicorn src.main:app --host 0.0.0.0 --port ${PORT}"]

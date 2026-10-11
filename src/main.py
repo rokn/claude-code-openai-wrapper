@@ -686,8 +686,7 @@ async def generate_streaming_response(
         ):
             if chunk.get("type") == "client_tool_calls":
                 tool_calls = [
-                    {"index": i, **tc}
-                    for i, tc in enumerate(to_openai_tool_calls(chunk["calls"]))
+                    {"index": i, **tc} for i, tc in enumerate(to_openai_tool_calls(chunk["calls"]))
                 ]
                 role_chunk = ChatCompletionStreamResponse(
                     id=request_id,
@@ -1527,7 +1526,7 @@ async def root():
 
             const quickstartCode = `curl -X POST http://localhost:8000/v1/chat/completions \\\\
   -H "Content-Type: application/json" \\\\
-  -d '{{"model": "claude-sonnet-4-5-20250929", "messages": [{{"role": "user", "content": "Hello!"}}]}}'`;
+  -d '{{"model": "claude-sonnet-5-5", "messages": [{{"role": "user", "content": "Hello!"}}]}}'`;
 
             async function highlightQuickstart() {{
                 const theme = isDark() ? darkTheme : lightTheme;
@@ -1543,7 +1542,7 @@ async def root():
             highlightQuickstart();
         </script>
         <script>
-            const quickstartText = 'curl -X POST http://localhost:8000/v1/chat/completions -H "Content-Type: application/json" -d \\'{{"model": "claude-sonnet-4-5-20250929", "messages": [{{"role": "user", "content": "Hello!"}}]}}\\'';
+            const quickstartText = 'curl -X POST http://localhost:8000/v1/chat/completions -H "Content-Type: application/json" -d \\'{{"model": "claude-sonnet-5-5", "messages": [{{"role": "user", "content": "Hello!"}}]}}\\'';
 
             function copyQuickstart() {{
                 if (navigator.clipboard && navigator.clipboard.writeText) {{
