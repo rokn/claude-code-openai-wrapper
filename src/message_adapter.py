@@ -22,13 +22,24 @@ class MessageAdapter:
             elif message.role == "user":
                 conversation_parts.append(f"Human: {message.content}")
             elif message.role == "assistant":
-                conversation_parts.append(f"Assistant: {message.content}")
+                text = message.content or ""
+                for call in message.tool_calls or []:
+                    fn = call.get("function", {})
+                    text += (
+                        f"\n[Called tool {fn.get('name')} with arguments "
+                        f"{fn.get('arguments')} (id {call.get('id')})]"
+                    )
+                conversation_parts.append(f"Assistant: {text.strip()}")
+            elif message.role == "tool":
+                conversation_parts.append(
+                    f"Tool result (id {message.tool_call_id}): {message.content or ''}"
+                )
 
         # Join conversation parts
         prompt = "\n\n".join(conversation_parts)
 
         # If the last message wasn't from the user, add a prompt for assistant
-        if messages and messages[-1].role != "user":
+        if messages and messages[-1].role not in ("user", "tool"):
             prompt += "\n\nHuman: Please continue."
 
         return prompt, system_prompt

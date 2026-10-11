@@ -6,7 +6,9 @@ from typing import AsyncGenerator, Dict, Any, Optional, List
 from pathlib import Path
 import logging
 
-from claude_agent_sdk import query, ClaudeAgentOptions
+from claude_agent_sdk import query, ClaudeAgentOptions, SdkMcpTool, create_sdk_mcp_server
+
+CLIENT_TOOL_SERVER = "client"
 
 logger = logging.getLogger(__name__)
 
@@ -104,6 +106,7 @@ class ClaudeCodeCLI:
         session_id: Optional[str] = None,
         continue_session: bool = False,
         permission_mode: Optional[str] = None,
+        client_tools: Optional[List[Dict[str, Any]]] = None,
     ) -> AsyncGenerator[Dict[str, Any], None]:
         """Run Claude Agent using the Python SDK and yield response chunks."""
 
@@ -137,6 +140,17 @@ class ClaudeCodeCLI:
                 if disallowed_tools:
                     options.disallowed_tools = disallowed_tools
 
+                # Expose client-supplied OpenAI tools as stub MCP tools. The run stops
+                # at the first call so the caller can return it as `tool_calls`.
+                prefix = f"mcp__{CLIENT_TOOL_SERVER}__"
+                if client_tools:
+                    options.mcp_servers = {
+                        CLIENT_TOOL_SERVER: self._build_client_tool_server(client_tools)
+                    }
+                    options.allowed_tools = (options.allowed_tools or []) + [
+                        prefix + t["function"]["name"] for t in client_tools
+                    ]
+
                 # Set permission mode (needed for tool execution in API context)
                 if permission_mode:
                     options.permission_mode = permission_mode
@@ -149,6 +163,16 @@ class ClaudeCodeCLI:
 
                 # Run the query and yield messages
                 async for message in query(prompt=prompt, options=options):
+                    if client_tools:
+                        calls = [
+                            {"id": b.id, "name": b.name[len(prefix) :], "input": b.input}
+                            for b in (getattr(message, "content", None) or [])
+                            if hasattr(b, "input") and b.name.startswith(prefix)
+                        ]
+                        if calls:
+                            yield {"type": "client_tool_calls", "calls": calls}
+                            return
+
                     # Debug logging
                     logger.debug(f"Raw SDK message type: {type(message)}")
                     logger.debug(f"Raw SDK message: {message}")
@@ -191,6 +215,24 @@ class ClaudeCodeCLI:
                 "is_error": True,
                 "error_message": str(e),
             }
+
+    @staticmethod
+    def _build_client_tool_server(client_tools: List[Dict[str, Any]]):
+        async def stub(args):
+            return {"content": [{"type": "text", "text": "Pending client execution."}]}
+
+        tools = []
+        for t in client_tools:
+            fn = t["function"]
+            tools.append(
+                SdkMcpTool(
+                    name=fn["name"],
+                    description=fn.get("description", ""),
+                    input_schema=fn.get("parameters") or {"type": "object", "properties": {}},
+                    handler=stub,
+                )
+            )
+        return create_sdk_mcp_server(name=CLIENT_TOOL_SERVER, tools=tools)
 
     def parse_claude_message(self, messages: List[Dict[str, Any]]) -> Optional[str]:
         """Extract the assistant message from Claude Agent SDK messages.

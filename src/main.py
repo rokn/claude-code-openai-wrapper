@@ -589,6 +589,33 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
     return JSONResponse(status_code=422, content=error_response)
 
 
+def apply_client_tools(request, claude_options) -> bool:
+    """Configure options so client-supplied OpenAI tools are exposed to Claude.
+
+    Returns True when client tools are active for this request.
+    """
+    if not request.tools or request.tool_choice == "none":
+        return False
+    claude_options["client_tools"] = request.tools
+    claude_options["disallowed_tools"] = CLAUDE_TOOLS
+    claude_options.pop("allowed_tools", None)
+    claude_options["max_turns"] = 3
+    claude_options["permission_mode"] = "bypassPermissions"
+    logger.info(f"Client tools enabled: {[t['function']['name'] for t in request.tools]}")
+    return True
+
+
+def to_openai_tool_calls(calls):
+    return [
+        {
+            "id": f"call_{c['id']}" if not str(c["id"]).startswith("call_") else c["id"],
+            "type": "function",
+            "function": {"name": c["name"], "arguments": json.dumps(c["input"])},
+        }
+        for c in calls
+    ]
+
+
 async def generate_streaming_response(
     request: ChatCompletionRequest, request_id: str, claude_headers: Optional[Dict[str, Any]] = None
 ) -> AsyncGenerator[str, None]:
@@ -639,6 +666,7 @@ async def generate_streaming_response(
             # Set permission mode to bypass prompts (required for API/headless usage)
             claude_options["permission_mode"] = "bypassPermissions"
             logger.info(f"Tools enabled by user request: {DEFAULT_ALLOWED_TOOLS}")
+        apply_client_tools(request, claude_options)
 
         # Run Claude Code
         chunks_buffer = []
@@ -653,8 +681,34 @@ async def generate_streaming_response(
             allowed_tools=claude_options.get("allowed_tools"),
             disallowed_tools=claude_options.get("disallowed_tools"),
             permission_mode=claude_options.get("permission_mode"),
+            client_tools=claude_options.get("client_tools"),
             stream=True,
         ):
+            if chunk.get("type") == "client_tool_calls":
+                tool_calls = [
+                    {"index": i, **tc}
+                    for i, tc in enumerate(to_openai_tool_calls(chunk["calls"]))
+                ]
+                role_chunk = ChatCompletionStreamResponse(
+                    id=request_id,
+                    model=request.model,
+                    choices=[
+                        StreamChoice(
+                            index=0,
+                            delta={"role": "assistant", "content": None, "tool_calls": tool_calls},
+                            finish_reason=None,
+                        )
+                    ],
+                )
+                yield f"data: {role_chunk.model_dump_json()}\n\n"
+                final = ChatCompletionStreamResponse(
+                    id=request_id,
+                    model=request.model,
+                    choices=[StreamChoice(index=0, delta={}, finish_reason="tool_calls")],
+                )
+                yield f"data: {final.model_dump_json()}\n\n"
+                yield "data: [DONE]\n\n"
+                return
             chunks_buffer.append(chunk)
 
             # Check if we have an assistant message
@@ -901,6 +955,7 @@ async def chat_completions(
                 # Set permission mode to bypass prompts (required for API/headless usage)
                 claude_options["permission_mode"] = "bypassPermissions"
                 logger.info(f"Tools enabled by user request: {DEFAULT_ALLOWED_TOOLS}")
+            apply_client_tools(request_body, claude_options)
 
             # Collect all chunks
             chunks = []
@@ -912,8 +967,26 @@ async def chat_completions(
                 allowed_tools=claude_options.get("allowed_tools"),
                 disallowed_tools=claude_options.get("disallowed_tools"),
                 permission_mode=claude_options.get("permission_mode"),
+                client_tools=claude_options.get("client_tools"),
                 stream=False,
             ):
+                if chunk.get("type") == "client_tool_calls":
+                    return ChatCompletionResponse(
+                        id=request_id,
+                        model=request_body.model,
+                        choices=[
+                            Choice(
+                                index=0,
+                                message=Message(
+                                    role="assistant",
+                                    content=None,
+                                    tool_calls=to_openai_tool_calls(chunk["calls"]),
+                                ),
+                                finish_reason="tool_calls",
+                            )
+                        ],
+                        usage=Usage(prompt_tokens=0, completion_tokens=0, total_tokens=0),
+                    )
                 chunks.append(chunk)
 
             # Extract assistant message

@@ -27,9 +27,11 @@ class ContentPart(BaseModel):
 
 
 class Message(BaseModel):
-    role: Literal["system", "user", "assistant"]
-    content: Union[str, List[ContentPart]]
+    role: Literal["system", "user", "assistant", "tool"]
+    content: Optional[Union[str, List[ContentPart]]] = None
     name: Optional[str] = None
+    tool_calls: Optional[List[Dict[str, Any]]] = None
+    tool_call_id: Optional[str] = None
 
     @model_validator(mode="after")
     def normalize_content(self):
@@ -82,6 +84,12 @@ class ChatCompletionRequest(BaseModel):
     )
     stream_options: Optional[StreamOptions] = Field(
         default=None, description="Options for streaming responses"
+    )
+    tools: Optional[List[Dict[str, Any]]] = Field(
+        default=None, description="OpenAI function tools the model may call"
+    )
+    tool_choice: Optional[Union[str, Dict[str, Any]]] = Field(
+        default=None, description="'none' disables the supplied tools; other values are advisory"
     )
 
     @field_validator("n")
@@ -206,7 +214,9 @@ class ChatCompletionRequest(BaseModel):
 class Choice(BaseModel):
     index: int
     message: Message
-    finish_reason: Optional[Literal["stop", "length", "content_filter", "null"]] = None
+    finish_reason: Optional[
+        Literal["stop", "length", "content_filter", "tool_calls", "null"]
+    ] = None
 
 
 class Usage(BaseModel):
@@ -228,7 +238,9 @@ class ChatCompletionResponse(BaseModel):
 class StreamChoice(BaseModel):
     index: int
     delta: Dict[str, Any]
-    finish_reason: Optional[Literal["stop", "length", "content_filter", "null"]] = None
+    finish_reason: Optional[
+        Literal["stop", "length", "content_filter", "tool_calls", "null"]
+    ] = None
 
 
 class ChatCompletionStreamResponse(BaseModel):
