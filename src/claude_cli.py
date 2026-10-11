@@ -65,6 +65,8 @@ class ClaudeCodeCLI:
                 options=ClaudeAgentOptions(
                     max_turns=1,
                     cwd=self.cwd,
+                    setting_sources=[],
+                    extra_args={"strict-mcp-config": None},
                     system_prompt={"type": "preset", "preset": "claude_code"},
                 ),
             ):
@@ -120,7 +122,15 @@ class ClaudeCodeCLI:
 
             try:
                 # Build SDK options
-                options = ClaudeAgentOptions(max_turns=max_turns, cwd=self.cwd)
+                # Ignore local state: setting_sources=[] skips user/project/local settings,
+                # hooks and CLAUDE.md; strict-mcp-config skips MCP servers (incl. claude.ai
+                # connectors) other than the ones configured below.
+                options = ClaudeAgentOptions(
+                    max_turns=max_turns,
+                    cwd=self.cwd,
+                    setting_sources=[],
+                    extra_args={"strict-mcp-config": None},
+                )
 
                 # Set model if specified
                 if model:
@@ -129,7 +139,7 @@ class ClaudeCodeCLI:
                 # Set system prompt - CLAUDE AGENT SDK STRUCTURED FORMAT
                 # Use structured format as per SDK documentation
                 if system_prompt:
-                    options.system_prompt = {"type": "text", "text": system_prompt}
+                    options.system_prompt = system_prompt
                 else:
                     # Use Claude Code preset to maintain expected behavior
                     options.system_prompt = {"type": "preset", "preset": "claude_code"}
